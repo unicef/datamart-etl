@@ -1,0 +1,24 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+"psycopg2" = "*"
+"geoalchemy2" = "*"
+sqlalchemy-utils = "*"
+pytest-cov = "*"
+
+[dev-packages]
+pdbpp = "*"
+ipython = "*"
+sqlalchemy = "*"
+celery = "*"
+pre-commit = "*"
+pytest = "*"
+pytest-echo = "*"
+pytest-pythonpath = "*"
+faker = "*"
+
+[requires]
+python_version = "3.7"
