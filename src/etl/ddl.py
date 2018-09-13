@@ -1,9 +1,8 @@
 import geoalchemy2  # noqa: F401
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from sqlalchemy import MetaData
+from sqlalchemy import Column, MetaData, String
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.ext.automap import automap_base
 from src.etl.utils import create_database, drop_database
 
 
@@ -29,17 +28,31 @@ def syncronyze_extensions(source: Engine, destination: Engine):
 
 
 def sync_ddl(source: Engine, destination: Engine, from_schema="public", to_schema="public"):
-    tables = None
-    meta = MetaData()
-    base = automap_base(metadata=meta)
-    base.prepare(source, schema=from_schema, reflect=True)
+    sourceMeta = MetaData()
+    sourceMeta.reflect(source, schema=from_schema)
+    destMeta = MetaData(destination, schema=to_schema)
 
-    if from_schema != to_schema:
-        for name, table in base.metadata.tables.items():
-            table.schema = to_schema
+    for name, table in sourceMeta.tables.items():
+        table.tometadata(destMeta)
+    destMeta.create_all()
+    return destMeta
 
-    base.metadata.create_all(bind=destination, tables=tables)
-    return base.metadata
+
+def add_tenant(source: Engine, destination: Engine, tenant="bolivia"):
+    sourceMeta = MetaData()
+    sourceMeta.reflect(bind=source, schema=tenant)
+
+    for name, table in sourceMeta.tables.items():
+        table.schema = "public"
+        columns = list(table.columns)
+        col = Column('country_name', String, default='public')
+        columns.append(col)
+        table.columns = columns
+
+    sourceMeta.create_all(bind=destination)
+    m = MetaData()
+    m.reflect(bind=destination)
+    return m
 
 
 def reset_database(engine: Engine):

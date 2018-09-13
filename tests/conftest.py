@@ -3,7 +3,8 @@ from copy import copy
 
 import pytest
 from faker import Faker
-from sqlalchemy import Column, create_engine, Integer, String
+from sqlalchemy import Column, create_engine, Integer, MetaData, String
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -23,7 +24,24 @@ def engine():
 
 
 @pytest.fixture()
-def database():
+def dbname() -> str:
+    return fake.password(length=20, special_chars=False, digits=False, upper_case=True, lower_case=False)
+
+
+@pytest.fixture()
+def destination(dbname) -> Engine:
+    from etl.utils import create_database, drop_database
+    base_engine = create_engine(os.environ['TEST_DATABASE_URL'], echo=False)
+    url = copy(make_url(base_engine.url))
+    url.database = f"destination_{dbname}"
+    create_database(url)
+    db = create_engine(url)
+    yield db
+    drop_database(url)
+
+
+@pytest.fixture()
+def database(dbname) -> Engine:
     from etl.utils import create_database
 
     base_engine = create_engine(os.environ['TEST_DATABASE_URL'], echo=False)
@@ -31,19 +49,21 @@ def database():
     Session = sessionmaker(autoflush=False, autocommit=True)
     Session.configure(bind=base_engine)
 
-    name = fake.password(length=20, special_chars=False, digits=False, upper_case=True, lower_case=False)
-    tenant = fake.password(length=20, special_chars=False, digits=False, upper_case=True, lower_case=False)
-
+    # tenant = fake.password(length=20, special_chars=False, digits=False, upper_case=True, lower_case=False)
+    tenant = 'tenant'
     url = copy(make_url(base_engine.url))
-    url.database = name
+    url.database = f"source_{dbname}"
     create_database(url)
 
     db = create_engine(url)
     from sqlalchemy.schema import CreateSchema
-    base_engine.execute(CreateSchema(tenant))
+    db.execute(CreateSchema(tenant))
 
-    Public = declarative_base()
-    Tenant = declarative_base()
+    publicMeta = MetaData(schema='public')
+    tenantMeta = MetaData(schema=tenant)
+
+    Public = declarative_base(metadata=publicMeta)
+    Tenant = declarative_base(metadata=tenantMeta)
 
     class PublicTable(Public):
         __tablename__ = 'public_table'
@@ -59,5 +79,6 @@ def database():
 
     Public.metadata.create_all(db)
     Tenant.metadata.create_all(db)
+
     yield db
     drop_database(db.url)
