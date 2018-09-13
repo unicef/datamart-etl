@@ -1,3 +1,4 @@
+import geoalchemy2  # noqa: F401
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from sqlalchemy import MetaData
 from sqlalchemy.engine import Engine
@@ -28,12 +29,16 @@ def syncronyze_extensions(source: Engine, destination: Engine):
 
 
 def sync_ddl(source: Engine, destination: Engine, from_schema="public", to_schema="public"):
-    meta = MetaData(schema=from_schema)
+    tables = None
+    meta = MetaData()
     base = automap_base(metadata=meta)
     base.prepare(source, schema=from_schema, reflect=True)
-    for name, table in base.metadata.tables.items():
-        table.schema = to_schema
-    base.metadata.create_all(destination)
+
+    if from_schema != to_schema:
+        for name, table in base.metadata.tables.items():
+            table.schema = to_schema
+
+    base.metadata.create_all(bind=destination, tables=tables)
     return base.metadata
 
 
