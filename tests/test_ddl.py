@@ -4,7 +4,7 @@ from faker import Faker
 from sqlalchemy import MetaData
 from sqlalchemy.engine import Engine
 
-from etl.ddl import add_tenant, reset_database, sync_all, sync_ddl, syncronyze_extensions
+from etl.ddl import move_schema, reset_database, sync_all, sync_ddl, syncronyze_extensions
 from etl.utils import create_database, drop_database
 
 fake = Faker()
@@ -36,10 +36,20 @@ def test_sync_all(database, destination):
     assert sync_all(database, destination)
 
 
-def test_add_tenant(database: Engine, destination: Engine):
-    metadata = add_tenant(database, destination, 'tenant')
+def test_make_single_tenant(database: Engine, destination: Engine):
+    # syncronyze public
+    # sync_ddl(database, destination)
+    move_schema(database, destination, 'tenant1')
 
-    assert len(metadata.tables) == 1
-    assert 'tenant_table' in metadata.tables
-    table = metadata.tables['tenant_table']
-    assert 'country_name' in table.columns.keys(), 'country_name columns ahs not been added'
+    public = MetaData()
+    public.reflect(bind=database)
+    tenant = MetaData()
+    tenant.reflect(bind=database, schema='tenant1')
+    # public_tables = set(public.tables)
+    # tenant_tables = set(tenant.tables)
+    total_tables = set(list(tenant.tables) + list(public.tables))
+
+    check = MetaData()
+    check.reflect(bind=destination)
+    final_tables = set(check.tables)
+    assert len(total_tables) == len(final_tables)

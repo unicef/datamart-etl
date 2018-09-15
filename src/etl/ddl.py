@@ -1,8 +1,10 @@
 import geoalchemy2  # noqa: F401
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from sqlalchemy import Column, MetaData, String
+from sqlalchemy import Column, Integer, MetaData, PrimaryKeyConstraint, String
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.sql import ColumnCollection
+from sqlalchemy.sql.ddl import sort_tables_and_constraints
 from src.etl.utils import create_database, drop_database
 
 
@@ -38,21 +40,72 @@ def sync_ddl(source: Engine, destination: Engine, from_schema="public", to_schem
     return destMeta
 
 
-def add_tenant(source: Engine, destination: Engine, tenant="bolivia"):
-    sourceMeta = MetaData()
-    sourceMeta.reflect(bind=source, schema=tenant)
+def move_schema(source: Engine, destination: Engine, tenant="bolivia"):
+    publicMeta = MetaData()
+    publicMeta.reflect(bind=source)
+    tenantMeta = MetaData()
+    tenantMeta.reflect(bind=source, schema=tenant)
 
-    for name, table in sourceMeta.tables.items():
-        table.schema = "public"
-        columns = list(table.columns)
-        col = Column('country_name', String, default='public')
-        columns.append(col)
-        table.columns = columns
+    destMeta = MetaData(destination, schema="public")
 
-    sourceMeta.create_all(bind=destination)
-    m = MetaData()
-    m.reflect(bind=destination)
-    return m
+    tables = sort_tables_and_constraints(tenantMeta.tables.values())
+
+    pk = Column('id', Integer, primary_key=True)
+    country_name = Column('country_name', String, default='public', primary_key=True)
+    fks = []
+
+    for table, deps in tables:
+        if table is None:
+            continue
+
+        if table.schema:
+            table.schema = "public"
+            new_columns = ColumnCollection(pk, country_name)
+            table.constraints = {c for c in table.constraints if not isinstance(c, PrimaryKeyConstraint)}
+            for col in table.columns:
+                if col.primary_key:
+                    pass
+                elif col.foreign_keys:
+                    # search constraint related this foreign_key
+                    constraints = [c for c in table.constraints if c.columns.keys() == [col.name]]
+                    assert len(constraints) == 1
+                    constraint = constraints[0]
+                    # only create multi-column key if fk to tenant table
+                    if constraint.referred_table.schema:
+                        target, __ = col.name.split('_')
+                        # removes old constraint
+                        table.constraints.remove(constraint)
+                        # prepare new multi column foreign key
+                        _fk = Column(f'{target}_id', Integer,
+                                     )
+                        _country_name = Column(f'{target}_country_name',
+                                               String,
+                                               nullable=False)
+
+                        new_columns.add(_fk)
+                        new_columns.add(_country_name)
+                        fks.append({'columns': (_fk.name, _country_name.name),
+                                    'refcolumns': ('id', 'country_name'),
+                                    'source': table,
+                                    'target': constraint.referred_table, }
+                                   )
+                    else:
+                        new_columns.add(col)
+                else:
+                    new_columns.add(col)
+            table.columns = new_columns
+        else:
+            pass
+        table.tometadata(destMeta)
+
+    destMeta.create_all()
+
+    for entry in fks:
+        clause = f"ALTER TABLE {entry['source'].name} \
+    ADD CONSTRAINT FK_{entry['target'].name} \
+    FOREIGN KEY({','.join(entry['columns'])}) \
+    REFERENCES {entry['target'].name}({','.join(entry['refcolumns'])})"
+        destination.execute(clause)
 
 
 def reset_database(engine: Engine):
