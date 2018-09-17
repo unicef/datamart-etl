@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "ee9f28309a5466608b799f748268c7dd0008aad6aad70209911f854ecdeb0bae"
+            "sha256": "6b1f5f930c17aa3804e1937c421bd883c2f3354eedfc50a1ee8e5864ce8b5aac"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -82,6 +82,13 @@
                 "sha256:c39efa13fbdeb4506c476c9b3babf6a718da943dab7811c206005a4a956c080c"
             ],
             "version": "==4.3.0"
+        },
+        "django-regex": {
+            "hashes": [
+                "sha256:a4508894b49dd35e49acfbb8ee1046913ebe375ecbecebf64d30ffb9b4be6f2b"
+            ],
+            "index": "pypi",
+            "version": "==0.2.1"
         },
         "geoalchemy2": {
             "hashes": [

@@ -1,8 +1,11 @@
 from copy import copy
 
 import sqlalchemy as sa
+from sqlalchemy import MetaData
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.sql.ddl import sort_tables_and_constraints
 from sqlalchemy_utils.functions import quote
 
 
@@ -82,3 +85,28 @@ def drop_database(url):
     # if conn_resource is not None:
     connection.close()
     engine.dispose()
+
+
+def get_all_tenants(engine: Engine) -> set:
+    insp = sa.inspect(engine)
+    db_list = insp.get_schema_names()
+    return set(db_list)
+
+
+def get_all_tables(source: Engine, tenant=None, public=True) -> list:
+    tables = []
+    if public:
+        publicMeta = MetaData()
+        publicMeta.reflect(bind=source)
+        tables = list(sort_tables_and_constraints(publicMeta.tables.values()))
+
+    if tenant:
+        tenantMeta = MetaData()
+        tenantMeta.reflect(bind=source, schema=tenant)
+        tables += list(sort_tables_and_constraints(tenantMeta.tables.values()))
+    return tables
+
+
+def get_schema_fieldname(column):
+    parts = column.name.rsplit('_', 1)
+    return f"{parts[0]}__country_name"

@@ -1,8 +1,10 @@
 import pytest
 from faker import Faker
-from sqlalchemy import MetaData
+from sqlalchemy import MetaData, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import join
 
+from etl.ddl import adapt_schema
 from etl.sql import migrate
 
 fake = Faker()
@@ -12,33 +14,57 @@ fake = Faker()
 def data(database: Engine, destination: Engine) -> (Engine, Engine):
     publicMeta = MetaData()
     publicMeta.reflect(bind=database)
-    tenantMeta = MetaData()
-    tenantMeta.reflect(bind=database, schema='tenant1')
-
     PublicTable = publicMeta.tables['public_table']
-    TenantMasterTable = tenantMeta.tables['tenant1.tenant_master_table']
-    TenantDetailTable = tenantMeta.tables['tenant1.tenant_detail_table']
-    # ins = PublicTable.insert().values(name='aaaaaa')
-    # ins.bind = database
+
     conn = database.connect()
     ret = conn.execute(PublicTable.insert().values(name="PublicTable1"))
     pk1 = ret.inserted_primary_key[0]
     conn.execute(PublicTable.insert().values(name="PublicTable2"))
 
-    ret = conn.execute(TenantMasterTable.insert().values(name="TenantMasterTable1.1",
-                                                         public_id=pk1))
-    pk2 = ret.inserted_primary_key[0]
-    conn.execute(TenantMasterTable.insert().values(name="TenantMasterTable1.2",
-                                                   public_id=pk1))
+    for schema in ['tenant1', 'tenant2']:
+        meta = MetaData()
+        meta.reflect(bind=database, schema=schema)
 
-    conn.execute(TenantDetailTable.insert().values(name="TenantDetailTable1.1.1",
-                                                   master_id=pk2))
-    conn.execute(TenantDetailTable.insert().values(name="TenantDetailTable1.1.2",
-                                                   master_id=pk2))
+        masterTable = meta.tables[f'{schema}.tenant_master_table']
+        detailTable = meta.tables[f'{schema}.tenant_detail_table']
+        ret = conn.execute(masterTable.insert().values(name=f"{schema}.MasterTable.1.1",
+                                                       public_id=pk1))
+        pk2 = ret.inserted_primary_key[0]
+        conn.execute(masterTable.insert().values(name=f"{schema}.MasterTable.1.1",
+                                                 public_id=pk1))
+
+        conn.execute(detailTable.insert().values(name="{meta.schema}.DetailTable1.1.1",
+                                                 master_id=pk2))
+        conn.execute(detailTable.insert().values(name="{meta.schema}.DetailTable1.1.2",
+                                                 master_id=pk2))
     return database, destination
 
 
 def test_migrate(data):
     database, destination = data
-    migrate(database, destination, 'tenant1')
-    pytest.fail()
+
+    adapt_schema(database, destination, 'tenant1')
+
+    migrate(database, destination, ['tenant1', 'tenant2'])
+
+    meta = MetaData()
+    meta.reflect(bind=destination)
+
+    # PublicTable = meta.tables['public_table']
+    TenantMasterTable = meta.tables['tenant_master_table']
+    TenantDetailTable = meta.tables['tenant_detail_table']
+
+    j1 = join(TenantDetailTable, TenantMasterTable)
+    # j2 = join(TenantMasterTable, PublicTable)
+
+    stm = select([TenantDetailTable.c.name.label('detail_name'),
+                  TenantMasterTable.c.name.label('master_name'),
+                  TenantDetailTable.c.country_name.label('detail_country_name'),
+                  TenantMasterTable.c.country_name.label('master_country_name'),
+                  TenantMasterTable.c.public_id.label('public_id'),
+                  ]).select_from(j1)
+    conn = destination.connect()
+    result = conn.execute(stm)
+    for row in result:
+        # TODO: remove me
+        print(111, "test_sql.py:65", dict(row))

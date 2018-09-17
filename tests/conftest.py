@@ -66,6 +66,12 @@ def database(dbname) -> Engine:
 
         Base = declarative_base()
 
+        class PublicNoFkTable(Base):
+            __tablename__ = 'public_nofk_table'
+            __table_args__ = ({"schema": "public"})
+            id = Column(Integer, primary_key=True, autoincrement=True)
+            name = Column(String)
+
         class PublicTable(Base):
             __tablename__ = 'public_table'
             __table_args__ = ({"schema": "public"})

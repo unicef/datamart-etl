@@ -10,6 +10,7 @@ sqlalchemy-utils = "*"
 pytest-cov = "*"
 sqlalchemy-migrate = "*"
 alembic = "*"
+django-regex = "*"
 
 [dev-packages]
 pdbpp = "*"
